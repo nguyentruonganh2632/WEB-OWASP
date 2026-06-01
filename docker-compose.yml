@@ -58,7 +58,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cms_cloudflared
     restart: unless-stopped
-    command: tunnel run
+    command: tunnel --no-autoupdate run
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     depends_on:
