@@ -9,6 +9,7 @@ from routes.cart import cart_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.json.ensure_ascii = False
 
 # ============================================================
 # [VULN] A05: Security Misconfiguration - CORS quá rộng
@@ -31,11 +32,5 @@ def health_check():
         return jsonify({"status": "success", "message": "Server đang chạy và kết nối DB thành công!"}), 200
     else:
         return jsonify({"status": "error", "message": "Server đang chạy nhưng không thể kết nối DB!"}), 500
-
 if __name__ == '__main__':
-    # ============================================================
-    # [VULN] A05: Security Misconfiguration - Debug mode trên production
-    # debug=True lộ stack trace, interactive debugger (thực thi code từ xa!)
-    # FIX: debug=False trên production, dùng Gunicorn/uWSGI
-    # ============================================================
-    app.run(debug=False, port=5000, host='0.0.0.0')
+    app.run(debug=True, port=5000, host='0.0.0.0')

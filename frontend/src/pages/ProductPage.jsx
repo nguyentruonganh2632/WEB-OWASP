@@ -62,6 +62,7 @@ export default function ProductPage() {
       const r = await axios.post(`${API}/purchase`, {
         product_id: parseInt(id),
         quantity,
+        price: displayPrice,
         address: address || 'Địa chỉ mặc định',
         phone: phone || user.phone || ''
       }, { headers: { Authorization: `Bearer ${getToken()}` } })

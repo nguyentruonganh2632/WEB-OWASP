@@ -52,20 +52,15 @@ def get_orders():
 def search_products():
     q = request.args.get('q', '')
 
-    # [VULN #2] SQLi UNION-based: Filter chặn comment nhưng không ngăn UNION
-    # Bypass: ' UNION SELECT 1,email,password_hash,4,5,6,7,8,9,10,11,12,13 FROM users WHERE '1'='1
-    if '--' in q or '#' in q or '/*' in q:
-        return jsonify({'error': 'Phát hiện ký tự nghi vấn trong từ khóa tìm kiếm!'}), 400
-
+    # [VULN #2] SQLi UNION-based: Không filter, inject trực tiếp vào câu query
+    # Payload ngắn: foo' UNION SELECT 1,email,password_hash,4,5,6 FROM users--
     db = get_db_connection()
     cursor = db.cursor()
-    # Vulnerable: direct string interpolation
+    # Vulnerable: direct string interpolation, chỉ 6 cột để payload gọn hơn
     query = f"""
-        SELECT p.*, c.name AS category_name, b.name AS brand_name
+        SELECT p.id, p.name, p.price, p.sale_price, p.stock_quantity, p.status
         FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        LEFT JOIN brands b ON p.brand_id = b.id
-        WHERE p.status=1 AND (p.name LIKE '%{q}%' OR p.description LIKE '%{q}%')
+        WHERE p.status=1 AND p.name LIKE '%{q}%'
     """
     try:
         cursor.execute(query)
@@ -111,7 +106,17 @@ def get_product(product_id):
     db.close()
     if not product:
         return jsonify({'error': 'Sản phẩm không tồn tại'}), 404
-    return jsonify({'product': product}), 200
+    return jsonify({
+        'product': product,
+        'purchase_api': {
+            'endpoint': '/api/purchase',
+            'method': 'POST',
+            'params': {
+                'required': ['product_id'],
+                'optional': ['quantity', 'price', 'address', 'phone']
+            }
+        }
+    }), 200
 
 
 @products_bp.route('/products/<int:product_id>', methods=['PUT'])
@@ -201,7 +206,13 @@ def purchase():
     quantity = int(data.get('quantity', 1))
 
     if not product_id or quantity < 1:
-        return jsonify({'error': 'Dữ liệu không hợp lệ'}), 400
+        return jsonify({
+            'error': 'Dữ liệu không hợp lệ',
+            'expected_params': {
+                'required': ['product_id'],
+                'optional': ['quantity', 'price', 'address', 'phone']
+            }
+        }), 400
 
     db = get_db_connection()
     cursor = db.cursor()
@@ -246,7 +257,7 @@ def purchase():
     cursor.execute("""
         INSERT INTO orders (user_id, receiver_name, receiver_phone, receiver_address,
                             total_amount, payment_method, order_status, created_at)
-        VALUES (%s, %s, %s, %s, %s, 'wallet', 'Cho xac nhan', NOW())
+        VALUES (%s, %s, %s, %s, %s, 'wallet', 'Hoan thanh', NOW())
     """, (
         current['user_id'],
         user['full_name'],
@@ -275,10 +286,65 @@ def purchase():
         'amount_paid': total,
         'balance_before': current_balance,
         'balance_after': new_balance,
+        'price': price
     }), 201
 
 
-# ─── PROFILE ──────────────────────────────────────────────
+# ─── CANCEL ORDER (Hoàn tiền) ─────────────────────────────
+@products_bp.route('/orders/<int:order_id>/cancel', methods=['POST'])
+def cancel_order(order_id):
+    """
+    Hủy đơn hàng và hoàn tiền về ví.
+    Chỉ cho phép hủy đơn đang ở trạng thái 'Cho xac nhan'.
+    """
+    current = get_current_user(request)
+    if not current:
+        return jsonify({'error': 'Vui lòng đăng nhập'}), 401
+
+    db = get_db_connection()
+    cursor = db.cursor()
+
+    # Lấy thông tin đơn hàng
+    cursor.execute("SELECT * FROM orders WHERE id=%s", (order_id,))
+    order = cursor.fetchone()
+
+    if not order:
+        db.close()
+        return jsonify({'error': 'Đơn hàng không tồn tại'}), 404
+
+    # Chỉ được hủy đơn của chính mình
+    if order['user_id'] != current['user_id']:
+        db.close()
+        return jsonify({'error': 'Bạn không có quyền hủy đơn hàng này'}), 403
+
+    # Chỉ hủy được đơn đang chờ xác nhận hoặc hoàn thành (để test Race Condition)
+    if order['order_status'] not in ['Cho xac nhan', 'Hoan thanh']:
+        db.close()
+        return jsonify({'error': f'Không thể hủy đơn hàng ở trạng thái "{order["order_status"]}"'}), 400
+
+    refund_amount = float(order['total_amount'])
+
+    # Cập nhật trạng thái đơn hàng → Đã hủy
+    cursor.execute(
+        "UPDATE orders SET order_status='Da huy' WHERE id=%s",
+        (order_id,)
+    )
+
+    # Hoàn tiền về ví người dùng
+    cursor.execute(
+        "UPDATE users SET balance = balance + %s WHERE id=%s",
+        (refund_amount, current['user_id'])
+    )
+
+    db.close()
+
+    return jsonify({
+        'message': f'Đã hủy đơn hàng #{order_id} và hoàn lại {refund_amount:,.0f}đ vào ví của bạn.',
+        'refunded': refund_amount
+    }), 200
+
+
+# ─── GET ORDERS ────────────────────────────────────────────
 @products_bp.route('/profile', methods=['PUT'])
 def update_profile():
     """
@@ -322,7 +388,7 @@ def get_all_users():
     db = get_db_connection()
     cursor = db.cursor()
     cursor.execute(
-        "SELECT id, full_name, email, phone, password_hash, role_id, balance, created_at FROM users"
+        "SELECT id, full_name, email, phone, password_hash, role_id, balance, uuid, created_at FROM users"
     )
     users = cursor.fetchall()
     db.close()
@@ -420,6 +486,19 @@ def admin_update_order_status(order_id):
     if not order:
         db.close()
         return jsonify({'error': 'Đơn hàng không tồn tại'}), 404
+
+    # Nếu Admin hủy đơn → tự động hoàn tiền về ví khách hàng
+    if new_status == 'Da huy' and order['order_status'] != 'Da huy':
+        refund_amount = float(order['total_amount'])
+        cursor.execute(
+            "UPDATE users SET balance = balance + %s WHERE id=%s",
+            (refund_amount, order['user_id'])
+        )
+        cursor.execute("UPDATE orders SET order_status=%s WHERE id=%s", (new_status, order_id))
+        db.close()
+        return jsonify({
+            'message': f'Đã hủy đơn #{order_id} và hoàn lại {refund_amount:,.0f}đ vào ví khách hàng.'
+        }), 200
 
     cursor.execute("UPDATE orders SET order_status=%s WHERE id=%s", (new_status, order_id))
     db.close()

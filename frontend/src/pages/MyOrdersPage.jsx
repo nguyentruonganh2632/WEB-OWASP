@@ -7,6 +7,8 @@ export default function MyOrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [cancellingId, setCancellingId] = useState(null)
+  const [cancelMsg, setCancelMsg] = useState('')
   
   const user = getUser()
   const navigate = useNavigate()
@@ -55,6 +57,27 @@ export default function MyOrdersPage() {
     }
   }
 
+  const cancelOrder = async (orderId) => {
+    if (!window.confirm(`Bạn có chắc muốn hủy đơn hàng #${orderId}? Tiền sẽ được hoàn lại vào ví.`)) return
+    setCancellingId(orderId)
+    setCancelMsg('')
+    try {
+      const r = await axios.post(`${API}/orders/${orderId}/cancel`, {}, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      })
+      setCancelMsg('success:' + r.data.message)
+      // Cập nhật lại danh sách đơn hàng
+      fetchOrders()
+      // Cập nhật số dư mới trong localStorage
+      const updatedUser = { ...user, balance: (user.balance || 0) + r.data.refunded }
+      localStorage.setItem('cms_user', JSON.stringify(updatedUser))
+      window.dispatchEvent(new Event('auth-change'))
+    } catch (e) {
+      setCancelMsg('error:' + (e.response?.data?.error || 'Lỗi khi hủy đơn hàng'))
+    }
+    setCancellingId(null)
+  }
+
   if (loading) {
     return (
       <div className="page-wrapper"><div className="spinner"></div></div>
@@ -76,6 +99,11 @@ export default function MyOrdersPage() {
       </div>
 
       {error && <div className="alert alert-error mb-6">{error}</div>}
+      {cancelMsg && (
+        <div className={`alert ${cancelMsg.startsWith('success') ? 'alert-success' : 'alert-error'} mb-6`}>
+          {cancelMsg.split(':').slice(1).join(':')}
+        </div>
+      )}
 
       {orders.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -145,6 +173,17 @@ export default function MyOrdersPage() {
                   >
                     📄 In Hóa đơn
                   </a>
+                  {/* Nút hủy đơn — cho phép hủy cả khi Chờ xác nhận hoặc Hoàn thành */}
+                  {(o.order_status === 'Cho xac nhan' || o.order_status === 'Hoan thanh') && (
+                    <button
+                      className="btn btn-sm"
+                      style={{ marginTop: '8px', fontSize: '12px', background: 'var(--red, #ef4444)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                      onClick={() => cancelOrder(o.id)}
+                      disabled={cancellingId === o.id}
+                    >
+                      {cancellingId === o.id ? '⏳ Đang hủy...' : '❌ Hủy đơn'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

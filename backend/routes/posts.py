@@ -40,8 +40,9 @@ def add_review():
     rating = data.get('rating', 5)
     comment = data.get('comment', '')
 
-    # Escape HTML trước khi lưu — phòng Stored XSS
-    safe_comment = html_lib.escape(comment)
+    # [VULN #4] Stored XSS: Lưu trực tiếp comment thô mà không escape/sanitize
+    # Frontend (ProductPage.jsx) sẽ dùng dangerouslySetInnerHTML để render
+    safe_comment = comment
 
     db = get_db_connection()
     cursor = db.cursor()

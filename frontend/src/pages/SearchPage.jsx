@@ -12,19 +12,7 @@ export default function SearchPage() {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
 
-  // [VULN #4] DOM XSS: Đọc ?filter= từ URL rồi gán thẳng vào innerHTML
-  // Burp DOM Invader sẽ phát hiện: source=URLSearchParams → sink=innerHTML
-  // Payload: /search?filter=<img src=x onerror=alert(document.cookie)>
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const filter = params.get('filter')
-    if (filter) {
-      const el = document.getElementById('search-filter-label')
-      if (el) {
-        el.innerHTML = filter  // DOM XSS sink — không sanitize!
-      }
-    }
-  }, [])
+
 
   useEffect(() => {
     if (!q && !loading) {
@@ -56,8 +44,7 @@ export default function SearchPage() {
     <div className="page-wrapper animate-in">
       <h1 className="page-title">🛍️ Sản phẩm</h1>
 
-      {/* DOM XSS target element — giá trị từ ?filter= sẽ render vào đây */}
-      <div id="search-filter-label" style={{ color: 'var(--accent)', fontSize: '13px', marginBottom: '8px', minHeight: '0' }}></div>
+
 
       <form onSubmit={handleSearch} className="search-bar mb-6">
         <input

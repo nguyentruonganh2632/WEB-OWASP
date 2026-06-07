@@ -176,7 +176,7 @@ def checkout_cart():
     cursor.execute("""
         INSERT INTO orders (user_id, receiver_name, receiver_phone, receiver_address,
                             total_amount, payment_method, order_status, created_at)
-        VALUES (%s, %s, %s, %s, %s, 'wallet', 'Cho xac nhan', NOW())
+        VALUES (%s, %s, %s, %s, %s, 'wallet', 'Hoan thanh', NOW())
     """, (
         current['user_id'],
         user['full_name'],

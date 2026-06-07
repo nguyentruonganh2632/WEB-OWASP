@@ -152,6 +152,27 @@ export default function Layout() {
       <main>
         <Outlet />
       </main>
+
+      <footer style={{
+        borderTop: '1px solid rgba(255,255,255,0.07)',
+        background: 'rgba(10,10,20,0.8)',
+        padding: '24px 0',
+        marginTop: 'auto',
+        textAlign: 'center',
+        fontSize: '13px',
+        color: 'var(--muted)',
+      }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ marginBottom: '6px', fontSize: '16px' }}>🐱 <strong style={{ color: 'var(--text)' }}>CatFood<span style={{ color: 'var(--accent2)' }}>Shop</span></strong></div>
+          <div>© 2024 CatFoodShop. All rights reserved.</div>
+          <div style={{ marginTop: '6px' }}>
+            Contact us:{' '}
+            <a href="mailto:support@catfood.com" style={{ color: 'var(--accent2)', textDecoration: 'none' }}>
+              support@catfood.com
+            </a>
+          </div>
+        </div>
+      </footer>
     </>
   )
 }
